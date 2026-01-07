@@ -1,0 +1,169 @@
+# Configuração para otimização de hiperparâmetros com Optuna
+
+# Estudo Optuna
+optuna:
+  study_name: "imputer_optimization"
+  storage: null  # None para in-memory (evita lock com SQLite quando n_jobs > 1)
+  direction: "maximize"  # maximize F1-score
+  n_trials: 100  # número de trials por imputador
+  timeout: null  # segundos (null = sem limite)
+  n_jobs: 1  # trials paralelos (SQLite não suporta bem n_jobs > 1, use in-memory storage ou PostgreSQL)
+  
+  # Configurações de pruning (early stopping)
+  pruning:
+    enabled: true
+    patience: 5  # trials sem melhorias antes de parar
+
+
+# Datasets a serem usados (definidos em datasets_config.yaml)
+datasets:
+  - spectf_heart
+  - statlog_heart
+  - ionosphere
+  - wdbc
+  - australian_credit
+  - sonar
+
+# Configuração de missing values
+missingness:
+  mechanism: "MCAR"  # MCAR, MAR, MNAR
+  ratios: [0.1, 0.2, 0.3]  # percentuais de missing
+  random_state: 42
+
+# Classificador para avaliar a qualidade da imputação
+classifier:
+  type: "logistic_regression"  # random_forest, logistic_regression, svm, decision_tree, knn
+  params:
+    max_iter: 1000
+    random_state: 42
+    n_jobs: -1
+  
+  # Métrica de avaliação
+  metric: "f1_weighted"  # f1_weighted, f1_macro, f1_micro, accuracy, roc_auc
+
+# Cross-validation
+cross_validation:
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+
+# Imputadores e seus espaços de busca
+imputers:
+  knn:
+    enabled: true
+    params:
+      n_neighbors:
+        type: "int"
+        low: 3
+        high: 20
+        step: 1
+      
+      weights:
+        type: "categorical"
+        choices: ["uniform", "distance"]
+      
+      metric:
+        type: "categorical"
+        choices: ["nan_euclidean"]
+  
+  mice:
+    enabled: true
+    params:
+      max_iter:
+        type: "int"
+        low: 5
+        high: 50
+        step: 5
+      
+      tol:
+        type: "loguniform"
+        low: 1e-4
+        high: 1e-2
+      
+      imputation_order:
+        type: "categorical"
+        choices: ["ascending", "descending", "random", "roman", "arabic"]
+      
+      initial_strategy:
+        type: "categorical"
+        choices: ["mean", "median", "most_frequent"]
+      
+      n_nearest_features:
+        type: "categorical"
+        choices: [null, 5, 10, 20]
+  
+  # missforest:
+  #   enabled: true
+  #   params:
+  #     # IterativeImputer params
+  #     max_iter:
+  #       type: "int"
+  #       low: 5
+  #       high: 20
+  #       step: 5
+      
+  #     imputation_order:
+  #       type: "categorical"
+  #       choices: ["ascending", "descending", "random"]
+      
+  #     # RandomForest params
+  #     n_estimators:
+  #       type: "int"
+  #       low: 10
+  #       high: 200
+  #       step: 10
+      
+  #     max_depth:
+  #       type: "categorical"
+  #       choices: [5, 10, 20, null]
+      
+  #     min_samples_split:
+  #       type: "int"
+  #       low: 2
+  #       high: 10
+  #       step: 2
+      
+  #     min_samples_leaf:
+  #       type: "int"
+  #       low: 1
+  #       high: 4
+  #       step: 1
+      
+  #     max_features:
+  #       type: "categorical"
+  #       choices: ["sqrt", "log2", 1.0]
+  
+  svd:
+    enabled: true
+    params:
+      rank:
+        type: "int"
+        low: 2
+        high: 20
+        step: 2
+      
+      max_iter:
+        type: "int"
+        low: 50
+        high: 500
+        step: 50
+      
+      tol:
+        type: "loguniform"
+        low: 1e-5
+        high: 1e-3
+
+# Resultados
+results:
+  output_dir: "results/optuna_optimization"
+  save_format: "csv"  # csv, json, both
+  
+  # O que salvar
+  save:
+    best_params: true
+    all_trials: true
+    plots: true
+    study_object: true  # pickle do estudo
+
+# Random seed
+random_state: 42

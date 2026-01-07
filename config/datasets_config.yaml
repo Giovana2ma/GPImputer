@@ -1,0 +1,52 @@
+# Configuração de datasets UCI para classificação
+
+datasets:
+
+  spectf_heart:
+    id: 96
+    name: "SPECTF Heart"
+    description: "Heart SPECT diagnosis dataset"
+    binarize_type: "equal"
+    binarize_value: 1
+
+  wdbc:
+    id: 17
+    name: "WDBC"
+    description: "Wisconsin diagnostic breast cancer dataset"
+    binarize_type: "equal"
+    binarize_value: "M"  # ou "B" para inverter a classe positiva
+
+  australian_credit:
+    id: 143
+    name: "Australian Credit"
+    description: "Australian credit approval dataset"
+    binarize_type: "equal"
+    binarize_value: 1
+
+  ionosphere:
+    id: 52
+    name: "Ionosphere"
+    description: "Radar signal classification dataset"
+    binarize_type: "equal"
+    binarize_value: "g" 
+
+  statlog_heart:
+    id: 145
+    name: "Statlog Heart Disease"
+    description: "Heart disease classification dataset"
+    binarize_type: "equal"  # y == 2
+    binarize_value: 2
+
+  sonar:
+    id: 151
+    name: "Sonar"
+    description: "Sonar signal classification dataset"
+    binarize_type: "equal"
+    binarize_value: "M"  # ou "R" para inverter a classe positiva
+
+  # german_credit:
+  #   id: 144
+  #   name: "German Credit"
+  #   description: "German credit risk classification"
+  #   binarize_type: "equal"  # y == 2
+  #   binarize_value: 2

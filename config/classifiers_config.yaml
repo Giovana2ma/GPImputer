@@ -1,0 +1,86 @@
+# Configuração de classificadores para seleção
+
+classifiers:
+  RandomForest:
+    type: "sklearn.ensemble.RandomForestClassifier"
+    params:
+      n_estimators: 100
+      max_depth: 10
+      random_state: 42
+      n_jobs: -1
+    description: "Random Forest com 100 árvores"
+    
+  LogisticRegression:
+    type: "sklearn.linear_model.LogisticRegression"
+    params:
+      max_iter: 1000
+      random_state: 42
+      n_jobs: -1
+    description: "Regressão Logística"
+    
+  SVM_RBF:
+    type: "sklearn.svm.SVC"
+    params:
+      kernel: "rbf"
+      random_state: 42
+    description: "SVM com kernel RBF"
+    
+  SVM_Linear:
+    type: "sklearn.svm.SVC"
+    params:
+      kernel: "linear"
+      random_state: 42
+    description: "SVM com kernel linear"
+    
+  DecisionTree:
+    type: "sklearn.tree.DecisionTreeClassifier"
+    params:
+      max_depth: 10
+      random_state: 42
+    description: "Árvore de Decisão"
+    
+  KNN_5:
+    type: "sklearn.neighbors.KNeighborsClassifier"
+    params:
+      n_neighbors: 5
+      n_jobs: -1
+    description: "KNN com k=5"
+    
+  KNN_10:
+    type: "sklearn.neighbors.KNeighborsClassifier"
+    params:
+      n_neighbors: 10
+      n_jobs: -1
+    description: "KNN com k=10"
+    
+  GradientBoosting:
+    type: "sklearn.ensemble.GradientBoostingClassifier"
+    params:
+      n_estimators: 100
+      max_depth: 5
+      random_state: 42
+    description: "Gradient Boosting"
+    
+  AdaBoost:
+    type: "sklearn.ensemble.AdaBoostClassifier"
+    params:
+      n_estimators: 100
+      random_state: 42
+    description: "AdaBoost"
+    
+  NaiveBayes:
+    type: "sklearn.naive_bayes.GaussianNB"
+    params: {}
+    description: "Naive Bayes Gaussiano"
+    
+  XGBoost:
+    type: "xgboost.XGBClassifier"
+    params:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+      random_state: 42
+      eval_metric: "logloss"
+      use_label_encoder: false
+    description: "XGBoost"
+    optional: true  # Requer instalação separada

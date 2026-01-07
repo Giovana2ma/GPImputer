@@ -1,0 +1,104 @@
+# Genetic Programming Configuration with Classifier-based Fitness
+# Este arquivo demonstra como usar F1-score de um classificador como fitness
+
+# Population Parameters
+population:
+  size: 100
+  generations: 100
+  elitism_size: 5
+
+# Tree Parameters
+tree:
+  max_depth: 7
+  max_size: 100
+  init_method: "full"  # full, grow, half_and_half
+  init_depth_range: [2, 4]
+
+# Evolutionary Parameters
+evolution:
+  crossover_rate: 0.8
+  mutation_rate: 0.15
+  selection_method: "epsilon_lexicase"  # Options: tournament, epsilon_lexicase
+  epsilon: "auto"  # Epsilon for lexicase selection ('auto' uses MAD)
+  tournament_size: 2  # Only used if selection_method is 'tournament'
+  
+  # Crossover configuration
+  vector_crossover_probability: 0.5  # Probability of vector-level crossover (vs tree-level)
+  
+  # Mutation configuration (per-feature probabilistic mutation)
+  feature_selection_probability: 0.5  # Probability of selecting each feature for mutation
+  feature_mutation_probability: 0.15  # Probability of actually mutating a selected feature
+  
+# Mutation Types & Probabilities
+mutation:
+  uniform: 0.6
+  shrink: 0.1
+  point: 0.3
+
+# Fitness - Usando F1-score de classificador
+fitness:
+  metric: "f1_classifier"  # Usa F1-score do classificador como fitness
+  parsimony_coefficient: 0.0001  # Penalização por complexidade
+  
+  # Configuração do classificador
+  classifier:
+    type: "logistic_regression"  # Opções: random_forest, logistic_regression, svm, decision_tree, knn
+    params:
+      max_iter: 1000
+      solver: "liblinear"  # Fast solver for small datasets, better convergence
+      random_state: 42
+  
+  # Cross-validation para avaliar o classificador
+  cv_folds: 5
+  
+# Function Set (all will be protected)
+functions:
+  binary_ops: ["+", "-", "*", "/", "min", "max",'pow']
+  unary_ops: ["sqrt", "log", "exp", "abs"]
+
+# Terminal Set
+terminals:
+  imputers:
+    - "imp_mean"
+    - "imp_median"
+    - "imp_knn"
+    - "imp_mice"
+    - "imp_missforest"
+    - "imp_svd"
+  constants:
+    fixed: [-10, -1, 0, 1, 2, 10]
+    ephemeral: false  
+    ephemeral_range: [-10, 10]
+
+# Categorical Features Configuration
+categorical:
+  enabled: true  # Set to true to enable categorical feature imputation
+  
+  # Categorical imputers (apenas imputadores que suportam categóricos)
+  imputers:
+    - "imp_knn"        # KNN pode imputar categóricos
+    - "imp_mice"       # MICE pode imputar categóricos
+    - "imp_mode" 
+    - "imp_missforest"
+    - "imp_svd"     
+  
+  # Operadores para features categóricas
+  # Apenas majority_vote é usado (árvores GP só para categóricos)
+  operators:
+    - "majority_vote"  # Voto majoritário entre múltiplos imputadores
+  
+  # Configurações da árvore GP para categóricos
+  tree:
+    max_depth: 2      # Árvores mais rasas para categóricos
+    max_size: 15      # Limite de tamanho
+    init_depth_range: [1, 2]  # Profundidade inicial menor
+  
+# Convergence
+convergence:
+  patience: 10  # generations without improvement
+  min_improvement: 1e-4
+
+parallel:
+  enabled: true
+  n_jobs: -1
+
