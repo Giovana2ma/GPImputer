@@ -34,6 +34,7 @@ from imputers.missforest_imputer import MissForestImputerWrapper
 from imputers.svd_imputer import SVDImputerWrapper
 from data.missingness import generate_missing_data
 from data.dataset_loader import load_dataset_configs, load_and_preprocess_dataset
+from evaluation.metrics import rmse
 
 warnings.filterwarnings('ignore')
 
@@ -178,7 +179,8 @@ class OptunaImputer:
         trial: optuna.Trial,
         imputer_name: str,
         X_missing: np.ndarray,
-        y: np.ndarray
+        y: np.ndarray,
+        X_original: np.ndarray = None
     ) -> float:
         """
         Função objetivo para otimização.
@@ -188,6 +190,7 @@ class OptunaImputer:
             imputer_name: Nome do imputador
             X_missing: Features com missing values
             y: Target
+            X_original: Features originais sem missing values (para cálculo do RMSE)
             
         Returns:
             Score médio do cross-validation
@@ -205,9 +208,30 @@ class OptunaImputer:
         # Imputar
         try:
             X_imputed = imputer.fit_transform(X_missing)
+            
+            # Calcular RMSE se X_original for fornecido
+            imputation_rmse = None
+            if X_original is not None:
+                # Calcular apenas nas posições que eram missing
+                mask = np.isnan(X_missing)
+                if np.any(mask):
+                    try:
+                        imputation_rmse = rmse(X_original[mask], X_imputed[mask])
+                        trial.set_user_attr("rmse", imputation_rmse)
+                    except Exception as e:
+                        print(f"Error calculating RMSE: {e}")
+            
+            # Se a métrica de otimização for RMSE, retornar o valor calculado
+            metric = self.config['classifier']['metric']
+            if metric == 'rmse':
+                if imputation_rmse is None:
+                    return float('inf')
+                return imputation_rmse
+                
         except Exception as e:
             print(f"Error during imputation: {e}")
-            return 0.0
+            metric = self.config['classifier']['metric']
+            return float('inf') if metric == 'rmse' else 0.0
         
         # Criar classificador
         classifier = self.create_classifier()
@@ -241,7 +265,8 @@ class OptunaImputer:
         imputer_name: str,
         dataset_name: str,
         X_missing: np.ndarray,
-        y: np.ndarray
+        y: np.ndarray,
+        X_original: np.ndarray = None
     ) -> optuna.Study:
         """
         Otimiza um imputador para um dataset específico.
@@ -251,6 +276,7 @@ class OptunaImputer:
             dataset_name: Nome do dataset
             X_missing: Features com missing values
             y: Target
+            X_original: Features originais sem missing values (para cálculo do RMSE)
             
         Returns:
             Estudo do Optuna
@@ -260,6 +286,13 @@ class OptunaImputer:
         print(f"{'='*70}")
         
         optuna_config = self.config['optuna']
+        metric = self.config['classifier']['metric']
+        
+        # Determinar direção da otimização
+        if metric == 'rmse':
+            direction = 'minimize'
+        else:
+            direction = optuna_config['direction']
         
         # Criar estudo
         study_name = f"{optuna_config['study_name']}_{imputer_name}_{dataset_name}"
@@ -268,7 +301,7 @@ class OptunaImputer:
         
         study = optuna.create_study(
             study_name=study_name,
-            direction=optuna_config['direction'],
+            direction=direction,
             pruner=pruner,
             storage=optuna_config.get('storage'),
             load_if_exists=True
@@ -276,7 +309,7 @@ class OptunaImputer:
         
         # Otimizar
         study.optimize(
-            lambda trial: self.objective(trial, imputer_name, X_missing, y),
+            lambda trial: self.objective(trial, imputer_name, X_missing, y, X_original),
             n_trials=optuna_config['n_trials'],
             timeout=optuna_config.get('timeout'),
             n_jobs=optuna_config.get('n_jobs', 1),
@@ -284,7 +317,7 @@ class OptunaImputer:
         )
         
         # Resultados
-        print(f"\nMelhor F1-score: {study.best_value:.4f}")
+        print(f"\nMelhor Score ({metric}): {study.best_value:.4f}")
         print(f"Melhores parâmetros:")
         for param, value in study.best_params.items():
             print(f"  {param}: {value}")
@@ -311,15 +344,22 @@ class OptunaImputer:
         
         # Preparar dados
         trials_data = []
+        metric = self.config['classifier']['metric']
         for trial in study.trials:
             trial_dict = {
                 'trial_number': trial.number,
-                'f1_score': trial.value,
+                'optimization_score': trial.value,
+                metric: trial.value,
                 'imputer': imputer_name,
                 'dataset': dataset_name,
                 'missing_ratio': missing_ratio,
                 **trial.params
             }
+            
+            # Adicionar RMSE se disponível e não for a métrica principal (já adicionado acima)
+            if 'rmse' in trial.user_attrs and metric != 'rmse':
+                trial_dict['rmse'] = trial.user_attrs['rmse']
+                
             trials_data.append(trial_dict)
             self.all_results.append(trial_dict)
         
@@ -339,12 +379,13 @@ class OptunaImputer:
                 df_trials.to_json(json_path, orient='records', indent=2)
         
         # Salvar melhores parâmetros
+        metric = self.config['classifier']['metric']
         if self.config['results']['save']['best_params']:
             best_params = {
                 'imputer': imputer_name,
                 'dataset': dataset_name,
                 'missing_ratio': missing_ratio,
-                'best_f1_score': study.best_value,
+                f'best_{metric}': study.best_value,
                 'best_params': study.best_params,
                 'n_trials': len(study.trials),
                 'timestamp': timestamp
@@ -424,7 +465,8 @@ class OptunaImputer:
                         imputer_name,
                         dataset_name,
                         X_missing,
-                        y
+                        y,
+                        X_original=X.copy()
                     )
                     
                     # Salvar resultados
@@ -447,8 +489,19 @@ class OptunaImputer:
             print(f"{'='*70}")
             
             # Resumo
+            metric = self.config['classifier']['metric']
             print("\nRESUMO DA OTIMIZAÇÃO:")
-            print(df_all.groupby(['imputer', 'dataset', 'missing_ratio'])['f1_score'].agg(['mean', 'max', 'count']))
+            try:
+                # Tenta usar a coluna específica da métrica
+                if metric in df_all.columns:
+                     # Se for erro (RMSE), min é melhor. Se for score (F1), max é melhor.
+                    agg_funcs = ['mean', 'min', 'count'] if metric == 'rmse' else ['mean', 'max', 'count']
+                    print(df_all.groupby(['imputer', 'dataset', 'missing_ratio'])[metric].agg(agg_funcs))
+                else:
+                    # Fallback para optimization_score
+                    print(df_all.groupby(['imputer', 'dataset', 'missing_ratio'])['optimization_score'].agg(['mean', 'max', 'min', 'count']))
+            except Exception as e:
+                print(f"Erro ao gerar resumo: {e}")
             
             # Chamar análise automática se disponível
             try:

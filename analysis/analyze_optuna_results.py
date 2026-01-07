@@ -30,7 +30,22 @@ class OptunaResultsAnalyzer:
         """
         self.df = pd.read_csv(results_path)
         self.results_dir = Path(results_path).parent
+        
+        # Determine metric and direction
+        self.metric_col = 'f1_score'
+        self.metric_name = 'F1-Score'
+        self.direction = 'maximize'
+        
+        if 'optimization_score' in self.df.columns:
+            self.metric_col = 'optimization_score'
+            if 'rmse' in self.df.columns:
+                self.metric_name = 'RMSE'
+                self.direction = 'minimize'
+            else:
+                self.metric_name = 'Score'
+                
         print(f"Carregados {len(self.df)} trials de otimização")
+        print(f"Métrica: {self.metric_name} ({self.direction})")
         print(f"Imputadores: {self.df['imputer'].unique()}")
         print(f"Datasets: {self.df['dataset'].unique()}")
         print(f"Missing ratios: {self.df['missing_ratio'].unique()}")
@@ -38,7 +53,8 @@ class OptunaResultsAnalyzer:
     def plot_best_scores_comparison(self):
         """Compara os melhores scores de cada imputador por dataset."""
         # Agrupar por imputador, dataset e missing_ratio
-        best_scores = self.df.groupby(['imputer', 'dataset', 'missing_ratio'])['f1_score'].max().reset_index()
+        agg_func = 'min' if self.direction == 'minimize' else 'max'
+        best_scores = self.df.groupby(['imputer', 'dataset', 'missing_ratio'])[self.metric_col].agg(agg_func).reset_index()
         
         # Plot
         fig, axes = plt.subplots(1, len(best_scores['missing_ratio'].unique()), 
@@ -52,10 +68,13 @@ class OptunaResultsAnalyzer:
             data = best_scores[best_scores['missing_ratio'] == missing_ratio]
             
             # Pivot para heatmap
-            pivot_data = data.pivot(index='imputer', columns='dataset', values='f1_score')
+            pivot_data = data.pivot(index='imputer', columns='dataset', values=self.metric_col)
             
-            sns.heatmap(pivot_data, annot=True, fmt='.3f', cmap='YlGnBu', 
-                       ax=ax, cbar_kws={'label': 'F1-Score'})
+            # Inverter colormap se minimizar
+            cmap = 'YlGnBu_r' if self.direction == 'minimize' else 'YlGnBu'
+            
+            sns.heatmap(pivot_data, annot=True, fmt='.3f', cmap=cmap, 
+                       ax=ax, cbar_kws={'label': self.metric_name})
             ax.set_title(f'Missing Ratio: {missing_ratio*100:.0f}%')
             ax.set_xlabel('Dataset')
             ax.set_ylabel('Imputador')
@@ -84,13 +103,18 @@ class OptunaResultsAnalyzer:
                     
                     if len(subset) > 0:
                         # Calcular best score até o momento
-                        cummax = subset.sort_values('trial_number')['f1_score'].cummax()
-                        ax.plot(subset['trial_number'], cummax, 
+                        sorted_subset = subset.sort_values('trial_number')
+                        if self.direction == 'minimize':
+                            cumbest = sorted_subset[self.metric_col].cummin()
+                        else:
+                            cumbest = sorted_subset[self.metric_col].cummax()
+                            
+                        ax.plot(subset['trial_number'], cumbest, 
                                label=f'{dataset} ({missing_ratio*100:.0f}%)', 
                                alpha=0.7)
             
             ax.set_xlabel('Trial')
-            ax.set_ylabel('Best F1-Score')
+            ax.set_ylabel(f'Best {self.metric_name}')
             ax.set_title(f'{imputer.upper()}')
             ax.legend(fontsize=8, loc='best')
             ax.grid(True, alpha=0.3)
@@ -105,7 +129,7 @@ class OptunaResultsAnalyzer:
         data = self.df[self.df['imputer'] == imputer].copy()
         
         # Identificar colunas de parâmetros (excluir metadados)
-        exclude_cols = {'trial_number', 'f1_score', 'imputer', 'dataset', 'missing_ratio'}
+        exclude_cols = {'trial_number', 'f1_score', 'optimization_score', 'rmse', 'imputer', 'dataset', 'missing_ratio'}
         param_cols = [col for col in data.columns if col not in exclude_cols]
         
         if not param_cols:
@@ -124,20 +148,21 @@ class OptunaResultsAnalyzer:
             
             # Verificar se é numérico ou categórico
             if pd.api.types.is_numeric_dtype(data[param]):
-                # Scatter plot: parâmetro vs f1_score
-                scatter = ax.scatter(data[param], data['f1_score'], 
-                                   c=data['f1_score'], cmap='viridis', 
+                # Scatter plot: parâmetro vs score
+                cmap = 'viridis_r' if self.direction == 'minimize' else 'viridis'
+                scatter = ax.scatter(data[param], data[self.metric_col], 
+                                   c=data[self.metric_col], cmap=cmap, 
                                    alpha=0.6, s=50)
                 ax.set_xlabel(param)
-                ax.set_ylabel('F1-Score')
-                plt.colorbar(scatter, ax=ax, label='F1-Score')
+                ax.set_ylabel(self.metric_name)
+                plt.colorbar(scatter, ax=ax, label=self.metric_name)
             else:
                 # Box plot para categóricos
                 data_clean = data[data[param].notna()]
                 if len(data_clean) > 0:
-                    data_clean.boxplot(column='f1_score', by=param, ax=ax)
+                    data_clean.boxplot(column=self.metric_col, by=param, ax=ax)
                     ax.set_xlabel(param)
-                    ax.set_ylabel('F1-Score')
+                    ax.set_ylabel(self.metric_name)
                     ax.set_title('')
             
             ax.set_title(f'{param}', fontweight='bold')
@@ -170,16 +195,21 @@ class OptunaResultsAnalyzer:
             
             for imputer in sorted(self.df['imputer'].unique()):
                 data = self.df[self.df['imputer'] == imputer]
-                best_idx = data['f1_score'].idxmax()
+                
+                if self.direction == 'minimize':
+                    best_idx = data[self.metric_col].idxmin()
+                else:
+                    best_idx = data[self.metric_col].idxmax()
+                    
                 best_row = data.loc[best_idx]
                 
                 f.write(f"\n{imputer.upper()}:\n")
-                f.write(f"  Best F1-Score: {best_row['f1_score']:.4f}\n")
+                f.write(f"  Best {self.metric_name}: {best_row[self.metric_col]:.4f}\n")
                 f.write(f"  Dataset: {best_row['dataset']}\n")
                 f.write(f"  Missing Ratio: {best_row['missing_ratio']*100:.0f}%\n")
                 f.write(f"  Parâmetros:\n")
                 
-                exclude_cols = {'trial_number', 'f1_score', 'imputer', 'dataset', 'missing_ratio'}
+                exclude_cols = {'trial_number', 'f1_score', 'optimization_score', 'rmse', 'imputer', 'dataset', 'missing_ratio'}
                 param_cols = [col for col in data.columns if col not in exclude_cols]
                 
                 for param in param_cols:
@@ -191,18 +221,20 @@ class OptunaResultsAnalyzer:
             f.write("ESTATÍSTICAS POR DATASET\n")
             f.write("-"*70 + "\n\n")
             
-            stats = self.df.groupby(['dataset', 'missing_ratio', 'imputer'])['f1_score'].agg(
-                ['mean', 'std', 'max', 'count']
+            agg_funcs = ['mean', 'std', 'min', 'max', 'count']
+            stats = self.df.groupby(['dataset', 'missing_ratio', 'imputer'])[self.metric_col].agg(
+                agg_funcs
             ).round(4)
             f.write(stats.to_string())
             
             # Ranking geral
             f.write("\n\n" + "="*70 + "\n")
-            f.write("RANKING GERAL (por F1-Score médio)\n")
+            f.write(f"RANKING GERAL (por {self.metric_name} médio)\n")
             f.write("-"*70 + "\n\n")
             
-            ranking = self.df.groupby('imputer')['f1_score'].agg(['mean', 'max']).round(4)
-            ranking = ranking.sort_values('mean', ascending=False)
+            ranking = self.df.groupby('imputer')[self.metric_col].agg(['mean', 'min', 'max']).round(4)
+            ascending = True if self.direction == 'minimize' else False
+            ranking = ranking.sort_values('mean', ascending=ascending)
             f.write(ranking.to_string())
             
         print(f"Salvo: {report_path}")
